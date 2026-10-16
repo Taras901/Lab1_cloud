@@ -224,12 +224,11 @@ resource "aws_iam_role" "github_actions" {
       Effect = "Allow"
       Principal = { Federated = aws_iam_openid_connect_provider.github.arn }
       Condition = {
-        StringLike = {
-          # ТУТ ВЖЕ ВПИСАНО ВАШ РЕПОЗИТОРІЙ
-          "token.actions.githubusercontent.com:sub": "repo:Taras901/Lab1_cloud:*"
-        }
-        StringEquals = { "token.actions.githubusercontent.com:aud": "sts.amazonaws.com" }
-      }
+  StringLike = {
+    "token.actions.githubusercontent.com:sub": "repo:*/Lab1_cloud:*"
+  }
+  StringEquals = { "token.actions.githubusercontent.com:aud": "sts.amazonaws.com" }
+}
     }]
   })
 }
