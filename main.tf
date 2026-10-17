@@ -223,12 +223,12 @@ resource "aws_iam_role" "github_actions" {
       Action = "sts:AssumeRoleWithWebIdentity"
       Effect = "Allow"
       Principal = { Federated = aws_iam_openid_connect_provider.github.arn }
-      Condition = {
-  StringLike = {
-    "token.actions.githubusercontent.com:sub": "repo:*/Lab1_cloud:*"
-  }
-  StringEquals = { "token.actions.githubusercontent.com:aud": "sts.amazonaws.com" }
-}
+    Condition = {
+        StringLike = {
+          "token.actions.githubusercontent.com:sub": "repo:taras901/Lab1_cloud:*"
+        }
+        StringEquals = { "token.actions.githubusercontent.com:aud": "sts.amazonaws.com" }
+      }
     }]
   })
 }
