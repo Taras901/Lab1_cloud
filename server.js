@@ -1,15 +1,19 @@
 const express = require('express');
 const { Pool } = require('pg');
+const swaggerUi = require('swagger-ui-express');
+const swaggerJsdoc = require('swagger-jsdoc');
+const jwt = require('jsonwebtoken');
 
 const app = express();
 app.use(express.json());
 
-// Підключення до БД береться зі змінних середовища (вимога лабораторної)
+// ==========================================
+// БАЗА ДАНИХ (PostgreSQL)
+// ==========================================
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
 });
 
-// Автоматичне створення таблиці при запуску
 const initDB = async () => {
   try {
     await pool.query(`
@@ -26,12 +30,64 @@ const initDB = async () => {
 };
 initDB();
 
-// Ендпоінт для перевірки стану (Health Check - знадобиться для балансувальника)
+// ==========================================
+// БОНУС 8: Документація Swagger
+// ==========================================
+const swaggerOptions = {
+  definition: {
+    openapi: '3.0.0',
+    info: { title: 'Lab 1 API', version: '1.0.0', description: 'API для лабораторної роботи' },
+  },
+  apis: ['./server.js'], // Шукає коментарі у цьому ж файлі
+};
+
+const swaggerSpec = swaggerJsdoc(swaggerOptions);
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+
+
+// ==========================================
+// БОНУС 6: JWT Авторизація (Middleware)
+// ==========================================
+function authenticateToken(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+  
+  if (token == null) return res.status(401).json({ error: "No token provided" }); 
+
+  jwt.verify(token, process.env.JWT_SECRET || 'super_secret_key', (err, user) => {
+    if (err) return res.status(403).json({ error: "Invalid token" });
+    req.user = user;
+    next();
+  });
+}
+
+
+// ==========================================
+// ЕНДПОІНТИ (РОУТИ)
+// ==========================================
+
+/**
+ * @openapi
+ * /api/health:
+ *   get:
+ *     description: Перевірка статусу сервера
+ *     responses:
+ *       200:
+ *         description: OK
+ */
 app.get('/api/health', (req, res) => {
   res.status(200).json({ status: 'OK' });
 });
 
-// Отримання всіх користувачів
+/**
+ * @openapi
+ * /api/users:
+ *   get:
+ *     description: Отримання всіх користувачів з бази даних
+ *     responses:
+ *       200:
+ *         description: Масив користувачів
+ */
 app.get('/api/users', async (req, res) => {
   try {
     const { rows } = await pool.query('SELECT * FROM users');
@@ -41,7 +97,26 @@ app.get('/api/users', async (req, res) => {
   }
 });
 
-// Додавання нового користувача
+/**
+ * @openapi
+ * /api/users:
+ *   post:
+ *     description: Додавання нового користувача
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name:
+ *                 type: string
+ *               email:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: Користувача створено
+ */
 app.post('/api/users', async (req, res) => {
   const { name, email } = req.body;
   try {
@@ -54,6 +129,22 @@ app.post('/api/users', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+/**
+ * @openapi
+ * /api/private:
+ *   get:
+ *     description: Секретний ендпоінт, що вимагає JWT токен
+ *     responses:
+ *       401:
+ *         description: Немає токена
+ *       200:
+ *         description: Доступ дозволено
+ */
+app.get('/api/private', authenticateToken, (req, res) => {
+  res.json({ message: "Ви успішно пройшли автентифікацію!" });
+});
+
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
