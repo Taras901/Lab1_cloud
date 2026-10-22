@@ -7,11 +7,14 @@ const jwt = require('jsonwebtoken');
 const app = express();
 app.use(express.json());
 
-// ==========================================
-// БАЗА ДАНИХ (PostgreSQL)
-// ==========================================
+// PostgreSQL
+
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  host: process.env.DB_HOST,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASS,
+  database: process.env.DB_NAME || 'labdb',
+  port: 5432,
 });
 
 const initDB = async () => {
@@ -30,24 +33,20 @@ const initDB = async () => {
 };
 initDB();
 
-// ==========================================
-// БОНУС 8: Документація Swagger
-// ==========================================
+
 const swaggerOptions = {
   definition: {
     openapi: '3.0.0',
     info: { title: 'Lab 1 API', version: '1.0.0', description: 'API для лабораторної роботи' },
   },
-  apis: ['./server.js'], // Шукає коментарі у цьому ж файлі
+  apis: ['./server.js'], 
 };
 
 const swaggerSpec = swaggerJsdoc(swaggerOptions);
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 
-// ==========================================
-// БОНУС 6: JWT Авторизація (Middleware)
-// ==========================================
+
 function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
@@ -61,10 +60,6 @@ function authenticateToken(req, res, next) {
   });
 }
 
-
-// ==========================================
-// ЕНДПОІНТИ (РОУТИ)
-// ==========================================
 
 /**
  * @openapi
