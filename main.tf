@@ -11,9 +11,9 @@ provider "aws" {
   region = "eu-north-1"
 }
 
-# ==========================================
-# ЗАВДАННЯ 3: Мережева ізоляція (VPC & Subnets)
-# ==========================================
+
+#(VPC & Subnets)
+
 resource "aws_vpc" "main" {
   cidr_block           = "10.0.0.0/16"
   enable_dns_hostnames = true
@@ -25,7 +25,7 @@ resource "aws_internet_gateway" "igw" {
   vpc_id = aws_vpc.main.id
 }
 
-# Публічні підмережі (для Балансувальника та застосунку)
+
 resource "aws_subnet" "public_1" {
   vpc_id                  = aws_vpc.main.id
   cidr_block              = "10.0.1.0/24"
@@ -42,7 +42,7 @@ resource "aws_subnet" "public_2" {
   tags = { Name = "lab1-public-2" }
 }
 
-# Приватні підмережі (тільки для Бази Даних)
+
 resource "aws_subnet" "private_1" {
   vpc_id            = aws_vpc.main.id
   cidr_block        = "10.0.3.0/24"
@@ -75,10 +75,10 @@ resource "aws_route_table_association" "pub2" {
   route_table_id = aws_route_table.public.id
 }
 
-# ==========================================
-# SECURITY GROUPS (Правила фаєрвола)
-# ==========================================
-# 1. Балансувальник приймає трафік з усього Інтернету
+
+#SECURITY GROUPS
+
+
 resource "aws_security_group" "alb_sg" {
   name   = "lab1-alb-sg"
   vpc_id = aws_vpc.main.id
@@ -96,7 +96,7 @@ resource "aws_security_group" "alb_sg" {
   }
 }
 
-# 2. Застосунок (ECS) приймає трафік ТІЛЬКИ від балансувальника
+
 resource "aws_security_group" "ecs_sg" {
   name   = "lab1-ecs-sg"
   vpc_id = aws_vpc.main.id
@@ -114,7 +114,7 @@ resource "aws_security_group" "ecs_sg" {
   }
 }
 
-# 3. База даних приймає трафік ТІЛЬКИ від застосунку (ECS)
+
 resource "aws_security_group" "rds_sg" {
   name   = "lab1-rds-sg"
   vpc_id = aws_vpc.main.id
@@ -132,9 +132,9 @@ resource "aws_security_group" "rds_sg" {
   }
 }
 
-# ==========================================
-# ЗАВДАННЯ 2 & 3: Керована База Даних (RDS)
-# ==========================================
+
+# RDS
+
 resource "aws_db_subnet_group" "db_subnet" {
   name       = "lab1-db-subnet-group"
   subnet_ids = [aws_subnet.private_1.id, aws_subnet.private_2.id]
@@ -155,18 +155,18 @@ resource "aws_db_instance" "postgres" {
   publicly_accessible    = false # База в приватній мережі, без доступу з інтернету
 }
 
-# ==========================================
-# ЗАВДАННЯ 2: Приватний реєстр образів (ECR)
-# ==========================================
+
+# ECR
+
 resource "aws_ecr_repository" "api_repo" {
   name                 = "lab1-api-repo"
   image_tag_mutability = "MUTABLE"
   force_delete         = true
 }
 
-# ==========================================
-# ЗАВДАННЯ 4: Балансувальник навантаження (ALB)
-# ==========================================
+
+#ALB
+
 resource "aws_lb" "api_alb" {
   name               = "lab1-api-alb"
   internal           = false
@@ -206,9 +206,9 @@ output "load_balancer_url" {
   value       = "http://${aws_lb.api_alb.dns_name}"
   description = "URL балансувальника (сюрприз, поки він не запрацює, бо контейнер ще не запущено!)"
 }
-# ==========================================
-# ЗАВДАННЯ 5: OIDC для GitHub Actions (Безпечний доступ)
-# ==========================================
+
+# OIDC для GitHub Actions
+
 resource "aws_iam_openid_connect_provider" "github" {
   url             = "https://token.actions.githubusercontent.com"
   client_id_list  = ["sts.amazonaws.com"]
@@ -246,4 +246,130 @@ output "github_role_arn" {
 output "ecr_repository_url" {
   value       = aws_ecr_repository.api_repo.repository_url
   description = "URL нашого реєстру контейнерів"
+}
+
+
+#ECS Fargate
+
+resource "aws_ecs_cluster" "main" {
+  name = "lab1-ecs-cluster"
+}
+
+resource "aws_iam_role" "ecs_execution_role" {
+  name = "lab1-ecs-execution-role"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action = "sts:AssumeRole"
+      Effect = "Allow"
+      Principal = { Service = "ecs-tasks.amazonaws.com" }
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "ecs_execution_role_policy" {
+  role       = aws_iam_role.ecs_execution_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+}
+
+resource "aws_ecs_task_definition" "api" {
+  family                   = "lab1-api-task"
+  network_mode             = "awsvpc"
+  requires_compatibilities = ["FARGATE"]
+  cpu                      = "256"
+  memory                   = "512"
+  execution_role_arn       = aws_iam_role.ecs_execution_role.arn
+
+  container_definitions = jsonencode([{
+    name      = "api-container"
+    image     = "127555670691.dkr.ecr.eu-north-1.amazonaws.com/lab1-api-repo:30cb60cc3c33cad0cb419a11dc09630158db85d3" #IRL
+    essential = true
+    portMappings = [{
+      containerPort = 3000
+      hostPort      = 3000
+    }]
+    environment = [
+      { name = "DB_HOST", value = aws_db_instance.postgres.address },
+      { name = "DB_USER", value = var.db_username },
+      { name = "DB_PASS", value = var.db_password },
+      { name = "DB_NAME", value = "labdb" }
+    ]
+  }])
+}
+
+resource "aws_ecs_service" "api_service" {
+  name            = "lab1-api-service"
+  cluster         = aws_ecs_cluster.main.id
+  task_definition = aws_ecs_task_definition.api.arn
+  desired_count   = 1
+  launch_type     = "FARGATE"
+
+  network_configuration {
+    subnets          = [aws_subnet.public_1.id, aws_subnet.public_2.id] 
+    security_groups  = [aws_security_group.ecs_sg.id]
+    assign_public_ip = true 
+  }
+
+  load_balancer {
+    target_group_arn = aws_lb_target_group.api_tg.arn
+    container_name   = "api-container"
+    container_port   = 3000
+  }
+}
+variable "alert_email" {
+  description = "Email для отримання сповіщень про помилки"
+  type        = string
+  default     = "vash_email@gmail.com"
+}
+
+
+resource "aws_sns_topic" "alerts" {
+  name = "lab1-alerts-topic"
+}
+
+resource "aws_sns_topic_subscription" "email_alert" {
+  topic_arn = aws_sns_topic.alerts.arn
+  protocol  = "email"
+  endpoint  = var.alert_email
+}
+
+resource "aws_cloudwatch_metric_alarm" "unhealthy_hosts" {
+  alarm_name          = "lab1-unhealthy-hosts"
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  evaluation_periods  = "1"
+  metric_name         = "UnHealthyHostCount"
+  namespace           = "AWS/ApplicationELB"
+  period              = "60"
+  statistic           = "Average"
+  threshold           = "1"
+  alarm_description   = "Сповіщення: API недоступне (немає живих контейнерів)"
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+  dimensions = {
+    TargetGroup  = aws_lb_target_group.api_tg.arn_suffix
+    LoadBalancer = aws_lb.api_alb.arn_suffix
+  }
+}
+
+resource "aws_cloudwatch_dashboard" "main" {
+  dashboard_name = "Lab1-API-Dashboard"
+  dashboard_body = jsonencode({
+    widgets = [
+      {
+        type   = "metric"
+        x      = 0
+        y      = 0
+        width  = 12
+        height = 6
+        properties = {
+          metrics = [
+            ["AWS/ApplicationELB", "RequestCount", "LoadBalancer", aws_lb.api_alb.arn_suffix]
+          ]
+          view    = "timeSeries"
+          stacked = false
+          region  = "eu-north-1"
+          title   = "Кількість HTTP запитів"
+        }
+      }
+    ]
+  })
 }
