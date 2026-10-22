@@ -3,9 +3,8 @@ name: Build and Push to AWS ECR
 on:
   push:
     branches:
-      - main # Запускається при пуші в гілку main
+      - main 
 
-# Дозволяємо GitHub запитувати тимчасовий токен в AWS (OIDC)
 permissions:
   id-token: write
   contents: read
@@ -31,8 +30,28 @@ jobs:
         env:
           ECR_REGISTRY: 127555670691.dkr.ecr.eu-north-1.amazonaws.com
           ECR_REPOSITORY: lab1-api-repo
-          # Використовуємо хеш коміту як тег (вимога лабораторної)
           IMAGE_TAG: ${{ github.sha }}
         run: |
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+
+      
+      - name: Download current task definition
+        run: |
+          aws ecs describe-task-definition --task-definition lab1-api-task --query taskDefinition > task-definition.json
+
+      - name: Fill in the new image ID in the Amazon ECS task definition
+        id: task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-definition.json
+          container-name: lab1-api-container
+          image: 127555670691.dkr.ecr.eu-north-1.amazonaws.com/lab1-api-repo:${{ github.sha }}
+
+      - name: Deploy Amazon ECS task definition
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: ${{ steps.task-def.outputs.task-definition }}
+          service: lab1-api-service
+          cluster: lab1-ecs-cluster
+          wait-for-service-stability: true
