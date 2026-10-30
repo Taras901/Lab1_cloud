@@ -16,7 +16,7 @@ const pool = new Pool({
   database: process.env.DB_NAME || 'labdb',
   port: 5432,
   ssl: {
-    rejectUnauthorized: false // <--- ДОДАЙТЕ ЦІ ТРИ РЯДКИ
+    rejectUnauthorized: false 
   }
 });
 

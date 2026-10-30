@@ -11,8 +11,15 @@ provider "aws" {
   region = "eu-north-1"
 }
 
+# VARIABLES 
 
-#(VPC & Subnets)
+variable "alert_email" {
+  description = "golubetstarasq@gmail.com"
+  type        = string
+  default     = "golubetstarasq@gmail.com" 
+}
+
+# VPC & SUBNETS
 
 resource "aws_vpc" "main" {
   cidr_block           = "10.0.0.0/16"
@@ -24,7 +31,6 @@ resource "aws_vpc" "main" {
 resource "aws_internet_gateway" "igw" {
   vpc_id = aws_vpc.main.id
 }
-
 
 resource "aws_subnet" "public_1" {
   vpc_id                  = aws_vpc.main.id
@@ -41,7 +47,6 @@ resource "aws_subnet" "public_2" {
   map_public_ip_on_launch = true
   tags = { Name = "lab1-public-2" }
 }
-
 
 resource "aws_subnet" "private_1" {
   vpc_id            = aws_vpc.main.id
@@ -75,9 +80,7 @@ resource "aws_route_table_association" "pub2" {
   route_table_id = aws_route_table.public.id
 }
 
-
-#SECURITY GROUPS
-
+# SECURITY GROUPS
 
 resource "aws_security_group" "alb_sg" {
   name   = "lab1-alb-sg"
@@ -96,7 +99,6 @@ resource "aws_security_group" "alb_sg" {
   }
 }
 
-
 resource "aws_security_group" "ecs_sg" {
   name   = "lab1-ecs-sg"
   vpc_id = aws_vpc.main.id
@@ -113,7 +115,6 @@ resource "aws_security_group" "ecs_sg" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 }
-
 
 resource "aws_security_group" "rds_sg" {
   name   = "lab1-rds-sg"
@@ -132,8 +133,7 @@ resource "aws_security_group" "rds_sg" {
   }
 }
 
-
-# RDS
+# RDS 
 
 resource "aws_db_subnet_group" "db_subnet" {
   name       = "lab1-db-subnet-group"
@@ -152,9 +152,8 @@ resource "aws_db_instance" "postgres" {
   db_subnet_group_name   = aws_db_subnet_group.db_subnet.name
   vpc_security_group_ids = [aws_security_group.rds_sg.id]
   skip_final_snapshot    = true
-  publicly_accessible    = false # База в приватній мережі, без доступу з інтернету
+  publicly_accessible    = false
 }
-
 
 # ECR
 
@@ -164,8 +163,7 @@ resource "aws_ecr_repository" "api_repo" {
   force_delete         = true
 }
 
-
-#ALB
+# ALB
 
 resource "aws_lb" "api_alb" {
   name               = "lab1-api-alb"
@@ -202,12 +200,7 @@ resource "aws_lb_listener" "api_listener" {
   }
 }
 
-output "load_balancer_url" {
-  value       = "http://${aws_lb.api_alb.dns_name}"
-  description = "URL балансувальника (сюрприз, поки він не запрацює, бо контейнер ще не запущено!)"
-}
-
-# OIDC для GitHub Actions
+#OIDC FOR GITHUB ACTIONS
 
 resource "aws_iam_openid_connect_provider" "github" {
   url             = "https://token.actions.githubusercontent.com"
@@ -238,18 +231,7 @@ resource "aws_iam_role_policy_attachment" "github_actions_admin" {
   policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
 }
 
-output "github_role_arn" {
-  value       = aws_iam_role.github_actions.arn
-  description = "ARN ролі для GitHub Actions"
-}
-
-output "ecr_repository_url" {
-  value       = aws_ecr_repository.api_repo.repository_url
-  description = "URL нашого реєстру контейнерів"
-}
-
-
-#ECS Fargate
+#ECS FARGATE
 
 resource "aws_ecs_cluster" "main" {
   name = "lab1-ecs-cluster"
@@ -282,7 +264,7 @@ resource "aws_ecs_task_definition" "api" {
 
   container_definitions = jsonencode([{
     name      = "api-container"
-    image     = "127555670691.dkr.ecr.eu-north-1.amazonaws.com/lab1-api-repo:30cb60cc3c33cad0cb419a11dc09630158db85d3" #IRL
+    image     = "${aws_ecr_repository.api_repo.repository_url}:latest" # Динамічне посилання на образ
     essential = true
     portMappings = [{
       containerPort = 3000
@@ -316,12 +298,8 @@ resource "aws_ecs_service" "api_service" {
     container_port   = 3000
   }
 }
-variable "alert_email" {
-  description = "Email для отримання сповіщень про помилки"
-  type        = string
-  default     = "vash_email@gmail.com"
-}
 
+#CLOUDWATCH & SNS ALERTS
 
 resource "aws_sns_topic" "alerts" {
   name = "lab1-alerts-topic"
@@ -372,4 +350,20 @@ resource "aws_cloudwatch_dashboard" "main" {
       }
     ]
   })
+}
+
+
+output "load_balancer_url" {
+  value       = "http://${aws_lb.api_alb.dns_name}"
+  description = "URL балансувальника"
+}
+
+output "github_role_arn" {
+  value       = aws_iam_role.github_actions.arn
+  description = "ARN ролі для GitHub Actions"
+}
+
+output "ecr_repository_url" {
+  value       = aws_ecr_repository.api_repo.repository_url
+  description = "URL нашого реєстру контейнерів"
 }

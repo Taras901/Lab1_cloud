@@ -1,7 +1,7 @@
 services:
   api:
     build: .
-    image: lab1-api-image  # НОВЕ: Явно задаємо ім'я без підкреслень
+    image: lab1-api-image 
     container_name: lab1-api-container
     ports:
       - "3000:3000"
